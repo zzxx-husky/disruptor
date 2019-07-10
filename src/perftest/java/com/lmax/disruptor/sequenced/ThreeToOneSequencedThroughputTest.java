@@ -78,53 +78,57 @@ import com.lmax.disruptor.util.DaemonThreadFactory;
  *
  * </pre>
  */
-public final class ThreeToOneSequencedThroughputTest extends AbstractPerfTestDisruptor
-{
-    private static final int NUM_PUBLISHERS = 3;
-    private static final int BUFFER_SIZE = 1024 * 64;
-    private static final long ITERATIONS = 1000L * 1000L * 20L;
-    private final ExecutorService executor =
-        Executors.newFixedThreadPool(NUM_PUBLISHERS + 1, DaemonThreadFactory.INSTANCE);
-    private final CyclicBarrier cyclicBarrier = new CyclicBarrier(NUM_PUBLISHERS + 1);
+public final class ThreeToOneSequencedThroughputTest extends AbstractPerfTestDisruptor {
+    private static int NUM_PUBLISHERS = 3;
+    private static int BUFFER_SIZE = 1024 * 64;
+    private static long ITERATIONS = 1000L * 1000L * 20L;
+    private ExecutorService executor = null;
+    private CyclicBarrier cyclicBarrier = null;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
-    private final RingBuffer<ValueEvent> ringBuffer =
-        createMultiProducer(ValueEvent.EVENT_FACTORY, BUFFER_SIZE, new BusySpinWaitStrategy());
+    private RingBuffer<ValueEvent> ringBuffer = null;
 
-    private final SequenceBarrier sequenceBarrier = ringBuffer.newBarrier();
-    private final ValueAdditionEventHandler handler = new ValueAdditionEventHandler();
-    private final BatchEventProcessor<ValueEvent> batchEventProcessor =
-        new BatchEventProcessor<ValueEvent>(ringBuffer, sequenceBarrier, handler);
-    private final ValuePublisher[] valuePublishers = new ValuePublisher[NUM_PUBLISHERS];
+    private SequenceBarrier sequenceBarrier = null;
+    private ValueAdditionEventHandler handler = null;
+    private BatchEventProcessor<ValueEvent> batchEventProcessor = null;
+    private ValuePublisher[] valuePublishers = null;
 
-    {
-        for (int i = 0; i < NUM_PUBLISHERS; i++)
+    private void initialize() {
+        executor = Executors.newFixedThreadPool(NUM_PUBLISHERS + 1, DaemonThreadFactory.INSTANCE);
+        cyclicBarrier = new CyclicBarrier(NUM_PUBLISHERS + 1);
+
+        ringBuffer = createMultiProducer(ValueEvent.EVENT_FACTORY, BUFFER_SIZE, new BusySpinWaitStrategy());
+
+        sequenceBarrier = ringBuffer.newBarrier();
+        handler = new ValueAdditionEventHandler();
+        batchEventProcessor = new BatchEventProcessor<ValueEvent>(ringBuffer, sequenceBarrier, handler);
+        valuePublishers = new ValuePublisher[NUM_PUBLISHERS];
+
         {
-            valuePublishers[i] = new ValuePublisher(cyclicBarrier, ringBuffer, ITERATIONS / NUM_PUBLISHERS);
-        }
+            for (int i = 0; i < NUM_PUBLISHERS; i++) {
+                valuePublishers[i] = new ValuePublisher(cyclicBarrier, ringBuffer, ITERATIONS / NUM_PUBLISHERS);
+            }
 
-        ringBuffer.addGatingSequences(batchEventProcessor.getSequence());
+            ringBuffer.addGatingSequences(batchEventProcessor.getSequence());
+        }
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
     @Override
-    protected int getRequiredProcessorCount()
-    {
-        return 4;
+    protected int getRequiredProcessorCount() {
+        return NUM_PUBLISHERS + 1;
     }
 
     @Override
-    protected long runDisruptorPass() throws Exception
-    {
+    protected long runDisruptorPass() throws Exception {
         final CountDownLatch latch = new CountDownLatch(1);
         handler
-            .reset(latch, batchEventProcessor.getSequence().get() + ((ITERATIONS / NUM_PUBLISHERS) * NUM_PUBLISHERS));
+                .reset(latch, batchEventProcessor.getSequence().get() + ((ITERATIONS / NUM_PUBLISHERS) * NUM_PUBLISHERS));
 
         Future<?>[] futures = new Future[NUM_PUBLISHERS];
-        for (int i = 0; i < NUM_PUBLISHERS; i++)
-        {
+        for (int i = 0; i < NUM_PUBLISHERS; i++) {
             futures[i] = executor.submit(valuePublishers[i]);
         }
         executor.submit(batchEventProcessor);
@@ -132,8 +136,7 @@ public final class ThreeToOneSequencedThroughputTest extends AbstractPerfTestDis
         long start = System.currentTimeMillis();
         cyclicBarrier.await();
 
-        for (int i = 0; i < NUM_PUBLISHERS; i++)
-        {
+        for (int i = 0; i < NUM_PUBLISHERS; i++) {
             futures[i].get();
         }
 
@@ -145,8 +148,26 @@ public final class ThreeToOneSequencedThroughputTest extends AbstractPerfTestDis
         return opsPerSecond;
     }
 
-    public static void main(String[] args) throws Exception
-    {
-        new ThreeToOneSequencedThroughputTest().testImplementations();
+    public static void main(String[] args) throws Exception {
+        for (int i = 0; i < args.length; ) {
+            switch (args[i]) {
+                case "--num_writers": {
+                    NUM_PUBLISHERS = Integer.parseInt(args[i + 1]);
+                    i += 2;
+                    break;
+                }
+                case "--num_messages": {
+                    ITERATIONS = Integer.parseInt(args[i + 1]);
+                    i += 2;
+                    break;
+                }
+                default: {
+                    throw new RuntimeException("Unknown arguments: " + args[i]);
+                }
+            }
+        }
+        ThreeToOneSequencedThroughputTest test = new ThreeToOneSequencedThroughputTest();
+        test.initialize();
+        test.testImplementations();
     }
 }

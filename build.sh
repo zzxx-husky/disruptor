@@ -54,7 +54,7 @@ function download()
 
 function do_javac()
 {
-    $JC -Xlint:deprecation -g -d $2 @$1
+    $JC -XDignore.symbol.file -nowarn -Xlint:deprecation -g -d $2 @$1
 }
 
 function download_dependencies()
@@ -103,10 +103,40 @@ function run_tests()
     $JAVA_HOME/bin/java -cp ${JARS}:${BUILD_MAIN_CLASSES}:${BUILD_TEST_CLASSES} org.junit.runner.JUnitCore $TESTS 2> /dev/null
 }
 
-create_build &&
-download_dependencies &&
-clean_classes &&
-main_compile &&
-test_compile &&
-perf_compile &&
-run_tests
+function run_perf()
+{
+    JARS=$(find ${BUILD_LIB_DIR} -name "*.jar" | paste -sd ':')
+    PROGRAM=$1
+    shift
+    $JAVA_HOME/bin/java -cp ${JARS}:${BUILD_MAIN_CLASSES}:${BUILD_PERF_CLASSES}:${BUILD_TEST_CLASSES} $PROGRAM $@
+}
+
+action=build
+if [ "$#" -ne 0 ]; then
+  action="$1"
+  shift
+fi
+
+case ${action} in
+  build)
+    create_build &&
+    download_dependencies &&
+    clean_classes &&
+    main_compile &&
+    test_compile &&
+    perf_compile &&
+    run_tests
+    ;;
+  perf)
+    create_build &&
+    download_dependencies &&
+    clean_classes &&
+    main_compile &&
+    test_compile &&
+    perf_compile &&
+    run_perf $@
+    ;;
+  *)
+    echo "Unknown action: ${action}"
+    ;;
+esac
