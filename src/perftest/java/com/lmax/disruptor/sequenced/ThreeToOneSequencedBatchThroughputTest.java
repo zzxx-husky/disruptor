@@ -141,8 +141,11 @@ public final class ThreeToOneSequencedBatchThroughputTest extends AbstractPerfTe
 
         latch.await();
 
-        long opsPerSecond = (ITERATIONS * 1000L) / (System.currentTimeMillis() - start);
+        long duration = System.currentTimeMillis() - start;
+        long opsPerSecond = (ITERATIONS * 1000L) / duration;
         batchEventProcessor.halt();
+
+        System.out.format("Duration: %d\n", duration);
 
         return opsPerSecond;
     }
@@ -160,13 +163,31 @@ public final class ThreeToOneSequencedBatchThroughputTest extends AbstractPerfTe
                     i += 2;
                     break;
                 }
+                case "--queue_length": {
+                    BUFFER_SIZE = Integer.parseInt(args[i + 1]);
+                    BUFFER_SIZE = nextPowerOf2(BUFFER_SIZE);
+                    i += 2;
+                    break;
+                }
                 default: {
                     throw new RuntimeException("Unknown arguments: " + args[i]);
                 }
             }
         }
+        System.out.format("W: %d, N: %d, L: %d\n", NUM_PUBLISHERS, ITERATIONS, BUFFER_SIZE);
         ThreeToOneSequencedBatchThroughputTest test = new ThreeToOneSequencedBatchThroughputTest();
         test.initialize();
         test.testImplementations();
+    }
+
+    public static int nextPowerOf2(int x) {
+        if (x > 0) {
+            x--;
+            for (int i = x >> 1; i != 0; i >>= 1) {
+                x |= i;
+            }
+            
+        }
+        return x + 1;
     }
 }
